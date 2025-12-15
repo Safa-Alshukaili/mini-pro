@@ -111,6 +111,77 @@ router.post("/posts", upload.single("media"), async (req, res) => {
 });
 
 /* =========================================================
+   ✅ LIKE / UNLIKE
+   POST /posts/:id/like   { userId }
+   ========================================================= */
+router.post("/posts/:id/like", async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const postId = req.params.id;
+
+    if (!userId) return res.status(400).json({ message: "userId required" });
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: "Post not found" });
+
+    const exists = post.likes.some((x) => String(x) === String(userId));
+
+    if (exists) {
+      // unlike
+      await Post.findByIdAndUpdate(postId, { $pull: { likes: userId } });
+    } else {
+      // like
+      await Post.findByIdAndUpdate(postId, { $addToSet: { likes: userId } });
+    }
+
+    const full = await getFullPost(postId);
+    res.json({ post: full });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "like failed" });
+  }
+});
+
+/* =========================================================
+   ✅ ADD COMMENT
+   POST /posts/:id/comments   { userId, text }
+   ========================================================= */
+router.post("/posts/:id/comments", async (req, res) => {
+  try {
+    const { userId, text } = req.body;
+    const postId = req.params.id;
+
+    if (!userId) return res.status(400).json({ message: "userId required" });
+    const cleaned = String(text || "").trim();
+    if (!cleaned) return res.status(400).json({ message: "text required" });
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: "Post not found" });
+
+    const comment = await Comment.create({
+      post: postId,
+      author: userId,
+      text: cleaned,
+    });
+
+    await Post.findByIdAndUpdate(postId, { $inc: { commentsCount: 1 } });
+
+    const populatedComment = await Comment.findById(comment._id).populate(
+      "author",
+      "firstname lastname avatarUrl email"
+    );
+
+    // ✅ رجّع comment + full post (عشان يدعم كل أماكن الكلاينت)
+    const full = await getFullPost(postId);
+
+    res.json({ comment: populatedComment, post: full });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "comment failed" });
+  }
+});
+
+/* =========================================================
    ✅ REPOST (ONE ROUTE ONLY)
    POST /posts/:id/repost   { userId }
    ========================================================= */
@@ -128,7 +199,6 @@ router.post("/posts/:id/repost", async (req, res) => {
       return res.status(404).json({ message: "Post not found" });
     }
 
-    // منع تكرار الريبوست
     const exists = await Post.findOne({
       author: userId,
       repostOf: originalId,
@@ -143,13 +213,11 @@ router.post("/posts/:id/repost", async (req, res) => {
       });
     }
 
-    // إنشاء الريبوست
     const repost = await Post.create({
       author: userId,
       repostOf: originalId,
     });
 
-    // زيادة العداد في الأصل
     await Post.findByIdAndUpdate(originalId, { $inc: { repostsCount: 1 } });
 
     const fullRepost = await getFullPost(repost._id);
