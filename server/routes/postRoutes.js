@@ -1,15 +1,22 @@
 // server/routes/postRoutes.js
 const express = require("express");
 const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
 const Post = require("../Models/PostModel");
 const Comment = require("../Models/CommentModel");
 const Follow = require("../Models/FollowModel");
 
 const router = express.Router();
 
+// ✅ same UPLOAD_DIR used in server/index.js
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "..", "uploads");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
 /* ===== Multer ===== */
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
 const upload = multer({ storage });
@@ -111,123 +118,31 @@ router.post("/posts", upload.single("media"), async (req, res) => {
 });
 
 /* =========================================================
-   ✅ LIKE / UNLIKE
-   POST /posts/:id/like   { userId }
-   ========================================================= */
-router.post("/posts/:id/like", async (req, res) => {
-  try {
-    const { userId } = req.body;
-    const postId = req.params.id;
-
-    if (!userId) return res.status(400).json({ message: "userId required" });
-
-    const post = await Post.findById(postId);
-    if (!post) return res.status(404).json({ message: "Post not found" });
-
-    const exists = post.likes.some((x) => String(x) === String(userId));
-
-    if (exists) {
-      // unlike
-      await Post.findByIdAndUpdate(postId, { $pull: { likes: userId } });
-    } else {
-      // like
-      await Post.findByIdAndUpdate(postId, { $addToSet: { likes: userId } });
-    }
-
-    const full = await getFullPost(postId);
-    res.json({ post: full });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "like failed" });
-  }
-});
-
-/* =========================================================
-   ✅ ADD COMMENT
-   POST /posts/:id/comments   { userId, text }
-   ========================================================= */
-router.post("/posts/:id/comments", async (req, res) => {
-  try {
-    const { userId, text } = req.body;
-    const postId = req.params.id;
-
-    if (!userId) return res.status(400).json({ message: "userId required" });
-    const cleaned = String(text || "").trim();
-    if (!cleaned) return res.status(400).json({ message: "text required" });
-
-    const post = await Post.findById(postId);
-    if (!post) return res.status(404).json({ message: "Post not found" });
-
-    const comment = await Comment.create({
-      post: postId,
-      author: userId,
-      text: cleaned,
-    });
-
-    await Post.findByIdAndUpdate(postId, { $inc: { commentsCount: 1 } });
-
-    const populatedComment = await Comment.findById(comment._id).populate(
-      "author",
-      "firstname lastname avatarUrl email"
-    );
-
-    // ✅ رجّع comment + full post (عشان يدعم كل أماكن الكلاينت)
-    const full = await getFullPost(postId);
-
-    res.json({ comment: populatedComment, post: full });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "comment failed" });
-  }
-});
-
-/* =========================================================
-   ✅ REPOST (ONE ROUTE ONLY)
-   POST /posts/:id/repost   { userId }
+   REPOST
    ========================================================= */
 router.post("/posts/:id/repost", async (req, res) => {
   try {
     const { userId } = req.body;
     const originalId = req.params.id;
 
-    if (!userId) {
-      return res.status(400).json({ message: "userId required" });
-    }
+    if (!userId) return res.status(400).json({ message: "userId required" });
 
     const originalPost = await Post.findById(originalId);
-    if (!originalPost) {
-      return res.status(404).json({ message: "Post not found" });
-    }
+    if (!originalPost) return res.status(404).json({ message: "Post not found" });
 
-    const exists = await Post.findOne({
-      author: userId,
-      repostOf: originalId,
-    });
-
+    const exists = await Post.findOne({ author: userId, repostOf: originalId });
     if (exists) {
       const fullOriginal = await getFullPost(originalId);
-      return res.json({
-        repost: null,
-        original: fullOriginal,
-        alreadyReposted: true,
-      });
+      return res.json({ repost: null, original: fullOriginal, alreadyReposted: true });
     }
 
-    const repost = await Post.create({
-      author: userId,
-      repostOf: originalId,
-    });
-
+    const repost = await Post.create({ author: userId, repostOf: originalId });
     await Post.findByIdAndUpdate(originalId, { $inc: { repostsCount: 1 } });
 
     const fullRepost = await getFullPost(repost._id);
     const fullOriginal = await getFullPost(originalId);
 
-    res.json({
-      repost: fullRepost,
-      original: fullOriginal,
-      alreadyReposted: false,
-    });
+    res.json({ repost: fullRepost, original: fullOriginal, alreadyReposted: false });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "repost failed" });
@@ -235,8 +150,7 @@ router.post("/posts/:id/repost", async (req, res) => {
 });
 
 /* =========================================================
-   FEED: me + following
-   GET /feed/:userId
+   FEED
    ========================================================= */
 router.get("/feed/:userId", async (req, res) => {
   try {
@@ -256,10 +170,7 @@ router.get("/feed/:userId", async (req, res) => {
   }
 });
 
-/* =========================================================
-   POSTS BY USER
-   GET /posts/by-user/:id
-   ========================================================= */
+/* POSTS BY USER */
 router.get("/posts/by-user/:id", async (req, res) => {
   try {
     let q = Post.find({ author: req.params.id }).sort({ createdAt: -1 });
@@ -274,7 +185,6 @@ router.get("/posts/by-user/:id", async (req, res) => {
   }
 });
 
-/* ========================================================= */
 router.patch("/posts/:id", async (req, res) => {
   try {
     const { text } = req.body;
@@ -288,10 +198,6 @@ router.patch("/posts/:id", async (req, res) => {
   }
 });
 
-/* =========================================================
-   DELETE POST
-   DELETE /posts/:id
-   ========================================================= */
 router.delete("/posts/:id", async (req, res) => {
   try {
     await Post.findByIdAndDelete(req.params.id);
@@ -302,10 +208,6 @@ router.delete("/posts/:id", async (req, res) => {
   }
 });
 
-/* =========================================================
-   EXPLORE
-   GET /explore
-   ========================================================= */
 router.get("/explore", async (req, res) => {
   try {
     let q = Post.find({}).sort({ createdAt: -1 }).limit(50);
@@ -320,10 +222,6 @@ router.get("/explore", async (req, res) => {
   }
 });
 
-/* =========================================================
-   NEARBY POSTS
-   GET /posts/nearby?lat=..&lng=..&radiusKm=10
-   ========================================================= */
 router.get("/posts/nearby", async (req, res) => {
   try {
     const lat = Number(req.query.lat);
