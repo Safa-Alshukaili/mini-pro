@@ -4,57 +4,43 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
+const path = require("path");
+const fs = require("fs");
+
 const User = require("./Models/UserModel");
 
 const app = express();
-
 app.use(express.json());
 
-// ✅ CORS (FIXED) — يسمح لـ React (3000) و Vite (5173)
-// ✅ CORS (DEPLOY READY)
+// ✅ CORS
 const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
+  // لو عندك رابط واجهة Render/Netlify/Vercel حطيه هنا
 ];
-
-// ✅ إذا عندك فرونت deployed أضيفيه هنا لاحقاً (مثلاً vercel / netlify)
-// allowedOrigins.push("https://YOUR-FRONTEND-URL.com");
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      // ✅ allow server-to-server / postman
       if (!origin) return callback(null, true);
-
-      // ✅ In production: allow any origin to avoid deployment CORS issues
-      // (أفضل حل لمشاريع الجامعة وتفادي مشاكل كثيرة)
-      if (process.env.NODE_ENV === "production") {
-        return callback(null, true);
-      }
-
-      // ✅ In dev: only allow local
       if (allowedOrigins.includes(origin)) return callback(null, true);
-
       return callback(new Error("Not allowed by CORS: " + origin));
     },
-    credentials: false,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-// ✅ preflight
 app.options(/.*/, cors());
 
+// ✅ Uploads directory (Persistent if UPLOAD_DIR is on Render Disk)
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "uploads");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// ✅ مهم للـ preflight
-app.options(/.*/, cors());
-
-
-// Static uploads
-app.use("/uploads", express.static(__dirname + "/uploads"));
+// ✅ serve static uploads
+app.use("/uploads", express.static(UPLOAD_DIR));
 
 // Routes
 const postRoutes = require("./routes/postRoutes");
@@ -154,7 +140,6 @@ app.get("/seed-user", async (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 
-// Start only after DB connects
 (async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 15000 });
