@@ -1,4 +1,4 @@
-// client/src/app/Soter.js
+// client/src/app/Store.js
 import { configureStore } from "@reduxjs/toolkit";
 import userReducer from "../Features/userSlice";
 import postsReducer from "../Features/postSlice";
