@@ -3,6 +3,9 @@ const express = require("express");
 const multer = require("multer");
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
+const path = require("path");
+const fs = require("fs");
+
 const User = require("../Models/UserModel");
 const Follow = require("../Models/FollowModel");
 const Post = require("../Models/PostModel");
@@ -10,10 +13,15 @@ const Comment = require("../Models/CommentModel");
 
 const router = express.Router();
 
-/* ========== Avatar upload ========== */
+/* ========== Avatar upload (Persistent) ========== */
+// ✅ Use the same UPLOAD_DIR pattern used in server/index.js and postRoutes.js
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "..", "uploads");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
 const avatarStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) => cb(null, "avatar-" + Date.now() + "-" + file.originalname),
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) =>
+    cb(null, "avatar-" + Date.now() + "-" + file.originalname),
 });
 const uploadAvatar = multer({ storage: avatarStorage });
 
@@ -77,7 +85,7 @@ router.get("/profile/:id", async (req, res) => {
     const user = await User.findById(id).select("-password");
     if (!user) return res.status(404).json({ message: "user not found" });
 
-    // ✅ FIX: populate repostOf like other pages + attach comments
+    // ✅ populate repostOf + attach comments
     let q = Post.find({ author: id }).sort({ createdAt: -1 });
     q = basePopulate(q);
     const posts = await q;
@@ -144,13 +152,22 @@ router.patch("/users/:id/preferences", async (req, res) => {
       return res.status(400).json({ message: "Invalid user id" });
     }
 
-    const { privateAccount, showProfileLocation, emailNotifications, pushNotifications } = req.body;
+    const {
+      privateAccount,
+      showProfileLocation,
+      emailNotifications,
+      pushNotifications,
+    } = req.body;
 
     const update = {};
-    if (privateAccount !== undefined) update["preferences.privateAccount"] = !!privateAccount;
-    if (showProfileLocation !== undefined) update["preferences.showProfileLocation"] = !!showProfileLocation;
-    if (emailNotifications !== undefined) update["preferences.emailNotifications"] = !!emailNotifications;
-    if (pushNotifications !== undefined) update["preferences.pushNotifications"] = !!pushNotifications;
+    if (privateAccount !== undefined)
+      update["preferences.privateAccount"] = !!privateAccount;
+    if (showProfileLocation !== undefined)
+      update["preferences.showProfileLocation"] = !!showProfileLocation;
+    if (emailNotifications !== undefined)
+      update["preferences.emailNotifications"] = !!emailNotifications;
+    if (pushNotifications !== undefined)
+      update["preferences.pushNotifications"] = !!pushNotifications;
 
     if (Object.keys(update).length === 0) {
       return res.status(400).json({ message: "No settings provided to update" });
@@ -246,7 +263,10 @@ router.post("/users/:id/follow", async (req, res) => {
 
 router.post("/users/:id/unfollow", async (req, res) => {
   try {
-    await Follow.deleteOne({ follower: req.body.userId, following: req.params.id });
+    await Follow.deleteOne({
+      follower: req.body.userId,
+      following: req.params.id,
+    });
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
