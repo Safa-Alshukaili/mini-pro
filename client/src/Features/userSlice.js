@@ -16,7 +16,7 @@ const initialState = {
 export const register = createAsyncThunk("users/register",
   async (userData, { rejectWithValue }) => {
     try {
-      const response = await axios.post("https://mini-pro-server.onrender.com/register", {
+      const response = await axios.post("http://localhost:3001/register", {
         firstname:userData.firstname,
         lastname: userData.lastname,
         email: userData.email,
@@ -31,7 +31,7 @@ export const register = createAsyncThunk("users/register",
 );
 export const login = createAsyncThunk("users/login", async (userData) => {
   try {
-    const response = await axios.post("https://mini-pro-server.onrender.com/login", {
+    const response = await axios.post("http://localhost:3001/login", {
       email: userData.email,
       password: userData.password,
     });
@@ -52,7 +52,7 @@ export const login = createAsyncThunk("users/login", async (userData) => {
 export const logout = createAsyncThunk("/users/logout", async () => {
   try {
     // Send a request to your server to log the user out
-    const response = await axios.post("https://mini-pro-server.onrender.com/logout");
+    const response = await axios.post("http://localhost:3001/logout");
   } catch (error) { }
 });
 export const updateUserProfile = createAsyncThunk(
