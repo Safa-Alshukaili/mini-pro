@@ -6,6 +6,7 @@ const mongoose = require("mongoose");
 const User = require("../Models/UserModel");
 const Follow = require("../Models/FollowModel");
 const Post = require("../Models/PostModel");
+const Comment = require("../Models/CommentModel");
 
 const router = express.Router();
 
@@ -16,10 +17,42 @@ const avatarStorage = multer.diskStorage({
 });
 const uploadAvatar = multer({ storage: avatarStorage });
 
+/* ===== helpers (same behavior as postRoutes) ===== */
+function basePopulate(q) {
+  return q
+    .populate("author", "firstname lastname email avatarUrl country city preferences")
+    .populate({
+      path: "repostOf",
+      populate: {
+        path: "author",
+        select: "firstname lastname email avatarUrl country city preferences",
+      },
+    });
+}
+
+async function attachComments(posts) {
+  const ids = posts.map((p) => p._id);
+
+  const comments = await Comment.find({ post: { $in: ids } })
+    .sort({ createdAt: 1 })
+    .populate("author", "firstname lastname avatarUrl email");
+
+  const map = {};
+  for (const c of comments) {
+    const pid = String(c.post);
+    if (!map[pid]) map[pid] = [];
+    map[pid].push(c);
+  }
+
+  return posts.map((p) => ({
+    ...p.toObject(),
+    comments: map[String(p._id)] || [],
+  }));
+}
+
 /* ========== Public user profile ========== */
 router.get("/users/:id", async (req, res) => {
   try {
-    // ✅ Avoid CastError crash
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ message: "Invalid user id" });
     }
@@ -44,9 +77,12 @@ router.get("/profile/:id", async (req, res) => {
     const user = await User.findById(id).select("-password");
     if (!user) return res.status(404).json({ message: "user not found" });
 
-    const posts = await Post.find({ author: id })
-      .sort({ createdAt: -1 })
-      .populate("author", "firstname lastname email avatarUrl country city preferences");
+    // ✅ FIX: populate repostOf like other pages + attach comments
+    let q = Post.find({ author: id }).sort({ createdAt: -1 });
+    q = basePopulate(q);
+    const posts = await q;
+
+    const postsWithComments = await attachComments(posts);
 
     const followersDocs = await Follow.find({ following: id }).populate(
       "follower",
@@ -60,7 +96,7 @@ router.get("/profile/:id", async (req, res) => {
     const followers = followersDocs.map((f) => f.follower);
     const following = followingDocs.map((f) => f.following);
 
-    res.json({ user, posts, followers, following });
+    res.json({ user, posts: postsWithComments, followers, following });
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: "profile failed" });
@@ -116,7 +152,6 @@ router.patch("/users/:id/preferences", async (req, res) => {
     if (emailNotifications !== undefined) update["preferences.emailNotifications"] = !!emailNotifications;
     if (pushNotifications !== undefined) update["preferences.pushNotifications"] = !!pushNotifications;
 
-    // ✅ لو ما وصل شي بالبودي
     if (Object.keys(update).length === 0) {
       return res.status(400).json({ message: "No settings provided to update" });
     }
