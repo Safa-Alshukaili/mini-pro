@@ -11,6 +11,7 @@ const app = express();
 app.use(express.json());
 
 // ✅ CORS (FIXED) — يسمح لـ React (3000) و Vite (5173)
+// ✅ CORS (DEPLOY READY)
 const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
@@ -18,20 +19,35 @@ const allowedOrigins = [
   "http://127.0.0.1:5173",
 ];
 
+// ✅ إذا عندك فرونت deployed أضيفيه هنا لاحقاً (مثلاً vercel / netlify)
+// allowedOrigins.push("https://YOUR-FRONTEND-URL.com");
+
 app.use(
   cors({
     origin: function (origin, callback) {
-      // لو الطلب من Postman/Server-side (بدون origin) نسمح
+      // ✅ allow server-to-server / postman
       if (!origin) return callback(null, true);
 
+      // ✅ In production: allow any origin to avoid deployment CORS issues
+      // (أفضل حل لمشاريع الجامعة وتفادي مشاكل كثيرة)
+      if (process.env.NODE_ENV === "production") {
+        return callback(null, true);
+      }
+
+      // ✅ In dev: only allow local
       if (allowedOrigins.includes(origin)) return callback(null, true);
 
       return callback(new Error("Not allowed by CORS: " + origin));
     },
+    credentials: false,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// ✅ preflight
+app.options(/.*/, cors());
+
 
 // ✅ مهم للـ preflight
 app.options(/.*/, cors());
