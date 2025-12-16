@@ -19,6 +19,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   // لو عندك رابط واجهة Render/Netlify/Vercel حطيه هنا
+  "https://mini-pro-ega3.onrender.com",
 ];
 
 app.use(
