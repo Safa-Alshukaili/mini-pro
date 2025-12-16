@@ -118,6 +118,108 @@ router.post("/posts", upload.single("media"), async (req, res) => {
 });
 
 /* =========================================================
+   LIKE / UNLIKE (Toggle)
+   PATCH /posts/:id/like
+   body: { userId }
+   ========================================================= */
+router.patch("/posts/:id/like", async (req, res) => {
+  try {
+    const postId = req.params.id;
+    const { userId } = req.body;
+
+    if (!userId) return res.status(400).json({ message: "userId required" });
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: "post not found" });
+
+    // Ensure likes array exists
+    if (!Array.isArray(post.likes)) post.likes = [];
+
+    const alreadyLiked = post.likes.map(String).includes(String(userId));
+
+    if (alreadyLiked) {
+      post.likes = post.likes.filter((id) => String(id) !== String(userId));
+    } else {
+      post.likes.push(userId);
+    }
+
+    // Optional: keep likesCount if your schema has it
+    post.likesCount = post.likes.length;
+
+    await post.save();
+
+    const full = await getFullPost(postId);
+    return res.json({
+      ok: true,
+      liked: !alreadyLiked,
+      post: full,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "like failed" });
+  }
+});
+
+/* =========================================================
+   ADD COMMENT
+   POST /posts/:id/comments
+   body: { userId, text }
+   ========================================================= */
+router.post("/posts/:id/comments", async (req, res) => {
+  try {
+    const postId = req.params.id;
+    const { userId, text } = req.body;
+
+    if (!userId) return res.status(400).json({ message: "userId required" });
+    if (!text || !String(text).trim())
+      return res.status(400).json({ message: "comment text required" });
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: "post not found" });
+
+    await Comment.create({
+      post: postId,
+      author: userId,
+      text: String(text),
+    });
+
+    // Optional: keep commentsCount if your schema has it
+    post.commentsCount = (post.commentsCount || 0) + 1;
+    await post.save();
+
+    const full = await getFullPost(postId);
+    res.json({ ok: true, post: full });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "add comment failed" });
+  }
+});
+
+/* =========================================================
+   DELETE COMMENT (optional but useful)
+   DELETE /comments/:commentId
+   ========================================================= */
+router.delete("/comments/:commentId", async (req, res) => {
+  try {
+    const commentId = req.params.commentId;
+
+    const c = await Comment.findById(commentId);
+    if (!c) return res.status(404).json({ message: "comment not found" });
+
+    await Comment.findByIdAndDelete(commentId);
+
+    // Try to reduce commentsCount on post if exists
+    await Post.findByIdAndUpdate(c.post, { $inc: { commentsCount: -1 } });
+
+    const full = await getFullPost(c.post);
+    res.json({ ok: true, post: full });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "delete comment failed" });
+  }
+});
+
+/* =========================================================
    REPOST
    ========================================================= */
 router.post("/posts/:id/repost", async (req, res) => {
